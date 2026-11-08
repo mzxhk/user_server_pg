@@ -1,0 +1,6 @@
+node_modules/
+smtp.txt
+PostgreSQL_ DB.txt
+.env
+.env.*
+!.env.example
