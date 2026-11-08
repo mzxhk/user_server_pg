@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { X509Certificate } from 'node:crypto';
+import { randomInt, randomUUID, X509Certificate } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import { Pool } from 'pg';
@@ -77,6 +77,41 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10kb' }));
 
+const captchaLifetimeMs = 5 * 60 * 1000;
+const maxCaptchaChallenges = 10_000;
+const captchaChallenges = new Map();
+
+app.get('/api/captcha', (_request, response) => {
+  const now = Date.now();
+  for (const [id, challenge] of captchaChallenges) {
+    if (challenge.expiresAt <= now) captchaChallenges.delete(id);
+  }
+  if (captchaChallenges.size >= maxCaptchaChallenges) {
+    return response.status(503).json({ message: 'CAPTCHA service is temporarily unavailable. Please try again.' });
+  }
+
+  const firstNumber = randomInt(2, 10);
+  const secondNumber = randomInt(2, 10);
+  const id = randomUUID();
+  captchaChallenges.set(id, {
+    answer: String(firstNumber + secondNumber),
+    expiresAt: now + captchaLifetimeMs,
+  });
+  return response.json({ id, question: `What is ${firstNumber} + ${secondNumber}?` });
+});
+
+function isCaptchaValid(body) {
+  const { captchaId, captchaAnswer } = body ?? {};
+  if (typeof captchaId !== 'string') return false;
+
+  const challenge = captchaChallenges.get(captchaId);
+  captchaChallenges.delete(captchaId);
+  return challenge !== undefined
+    && challenge.expiresAt > Date.now()
+    && typeof captchaAnswer === 'string'
+    && captchaAnswer.trim() === challenge.answer;
+}
+
 app.get('/api/health', (_request, response) => response.json({ ok: true }));
 
 function authenticate(request, response, next) {
@@ -93,6 +128,10 @@ function authenticate(request, response, next) {
 }
 
 app.post('/api/register', async (request, response) => {
+  if (!isCaptchaValid(request.body)) {
+    return response.status(400).json({ message: 'CAPTCHA is missing, incorrect, or expired. Please try again.' });
+  }
+
   const { name, email, password } = request.body ?? {};
   if (typeof name !== 'string' || name.trim().length < 2 || typeof email !== 'string' || typeof password !== 'string' || password.length < 8) {
     return response.status(400).json({ message: 'Name, valid email, and an 8-character password are required.' });
@@ -116,6 +155,10 @@ app.post('/api/register', async (request, response) => {
 });
 
 app.post('/api/login', async (request, response) => {
+  if (!isCaptchaValid(request.body)) {
+    return response.status(400).json({ message: 'CAPTCHA is missing, incorrect, or expired. Please try again.' });
+  }
+
   const { email, password } = request.body ?? {};
   if (typeof email !== 'string' || typeof password !== 'string') {
     return response.status(400).json({ message: 'Email and password are required.' });

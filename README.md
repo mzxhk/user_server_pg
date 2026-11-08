@@ -12,6 +12,8 @@ npm start
 
 Set `JWT_SECRET` to a long random value outside local development. The API returns an 8-hour bearer token after login and requires it for `PATCH /api/me`, so users can update only their own profile.
 
+Before registering or logging in, request `GET /api/captcha`. Submit its `id` as `captchaId` and the answer as `captchaAnswer` in the corresponding `POST /api/register` or `POST /api/login` JSON body. Challenges expire after five minutes and can be used once; request a new CAPTCHA after an invalid, expired, or already-used challenge.
+
 The API loads the project-root `ca.pem` certificate into the PostgreSQL TLS connection and requires certificate verification. Keep `PGSSL_REJECT_UNAUTHORIZED=true`; do not disable verification in production.
 
 The Flutter app uses `http://localhost:3000/api` by default. For an Android emulator, use the host machine address (often `http://10.0.2.2:3000/api`); for a physical device or another computer, use the API machine's LAN address:
